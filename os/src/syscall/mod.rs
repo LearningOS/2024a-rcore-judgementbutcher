@@ -28,13 +28,12 @@ use fs::*;
 use process::*;
 
 use crate::task::TASK_MANAGER;
+
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
-    let inner = TASK_MANAGER.get_inner_mut();
-    let tasks = inner.get_tasks();
-    let current = inner.get_current_task();
-    let mut task_block = tasks[current];
-    task_block.task_calls[syscall_id] += 1;
+    //在每次syscall调用时，增加当前任务的系统调用数
+    TASK_MANAGER.inc_sys_call_time(syscall_id);
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),

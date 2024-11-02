@@ -54,14 +54,10 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// YOUR JOB: Finish sys_task_info to pass testcases
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info");
-    let task_manager_inner = TASK_MANAGER.get_inner_mut();
-    let current_task_id = task_manager_inner.get_current_task();
-    let tasks_info = task_manager_inner.get_tasks();
-    let task_block = tasks_info[current_task_id];
     unsafe {
-        (*_ti).status = task_block.task_status;
-        (*_ti).syscall_times = task_block.task_calls;
-        (*_ti).time = get_time_ms() - task_block.task_start;
+        (*_ti).status = TASK_MANAGER.get_current_task_status();
+        (*_ti).syscall_times = TASK_MANAGER.get_current_task_sys_calls();
+        (*_ti).time = get_time_ms() - TASK_MANAGER.get_current_task_start();
     }
     0
 }
