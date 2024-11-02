@@ -130,7 +130,7 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
-            //the start time may be overwrite
+            //the start time may be overwrite 这里和同学zz讨论发现了错误
             // inner.tasks[current].task_start = get_time_ms();
             if inner.tasks[current].task_begin == false {
                 inner.tasks[current].task_start = get_time_ms();
