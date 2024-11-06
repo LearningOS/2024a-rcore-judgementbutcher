@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, PageTableEntry, VirtAddr, VirtPageNum};
+use crate::mm::{MapPermission, PageTableEntry, VPNRange, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -205,11 +205,22 @@ impl TaskManager {
     }
 
     ///将给出的虚拟地址范围从应用地址空间中删除映射关系
-    pub fn unmap_mem_area(&self, vpn_st: VirtPageNum, vpn_ed: VirtPageNum) -> isize{
+    pub fn unmap_mem_area(&self, start: usize, len: usize) -> isize{
         //没有给出直接删除一段的函数，那么只能一个一个unmap
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].memory_set.erase_mem_area(vpn_st, vpn_ed)
+        let vpn_st = VirtAddr::from(start).floor();
+        let vpn_ed = VirtAddr::from(start + len).ceil();
+        let vpn_range = VPNRange::new(vpn_st, vpn_ed);
+        for vpn in vpn_range {
+            if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+                inner.tasks[current].memory_set.erase_virt_map(vpn);
+            }
+        }
+        0
     }
 
 
