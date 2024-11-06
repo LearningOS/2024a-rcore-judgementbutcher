@@ -14,8 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PageTableEntry, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -79,6 +82,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.task_start = get_time_ms();
+        next_task.task_begin = true;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -140,6 +145,10 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[current].task_begin == false {
+                inner.tasks[current].task_start = get_time_ms();
+                inner.tasks[current].task_begin = true;
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -153,6 +162,57 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+     ///get current task's status
+     pub fn get_current_task_status(&self) -> TaskStatus {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_status
+    }
+
+    ///increase current tasks's syscall times
+    pub fn inc_sys_call_time(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_sys_calls[syscall_id] += 1;
+    }
+
+    ///获取当前任务的系统调用情况
+    pub fn get_current_task_sys_calls(&self) -> [u32;MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_sys_calls
+    }
+
+    ///或者当前任务的开始调度时间
+    pub fn get_current_task_start(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_start
+    }
+
+    ///获取当前应用的页表
+    pub fn get_page_table_entry(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.translate(vpn)
+    }
+
+    ///将给出的虚拟地址空间加入到地址空间中，自然实现了虚拟地址向物理地址的映射
+    pub fn add_new_mem_area(&self, start_va: VirtAddr ,end_va: VirtAddr, perm: MapPermission) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.insert_framed_area(start_va, end_va, perm);
+    }
+
+    ///将给出的虚拟地址范围从应用地址空间中删除映射关系
+    pub fn unmap_mem_area(&self, vpn_st: VirtPageNum, vpn_ed: VirtPageNum) -> isize{
+        //没有给出直接删除一段的函数，那么只能一个一个unmap
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.erase_mem_area(vpn_st, vpn_ed)
+    }
+
+
 }
 
 /// Run the first task in task list.

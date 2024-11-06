@@ -8,6 +8,7 @@ use crate::config::{
     KERNEL_STACK_SIZE, MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
 };
 use crate::sync::UPSafeCell;
+use crate::task::TASK_MANAGER;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -62,6 +63,28 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+
+    /// Assume that no conflicts.
+    pub fn erase_mem_area(
+        &mut self,
+        vpn_st: VirtPageNum, 
+        vpn_ed: VirtPageNum
+    ) -> isize {
+        let vpn_range = VPNRange::new(vpn_st, vpn_ed);
+        for vpn in vpn_range {
+            if let Some(pte) = TASK_MANAGER.get_page_table_entry(vpn) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+                self.page_table.unmap(vpn);
+            }
+            //如果没有匹配的pte，那实际上就说明了存在没有映射的
+            else {
+                return -1;
+            }
+        }
+        0
     }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
@@ -262,6 +285,7 @@ impl MemorySet {
             false
         }
     }
+
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
