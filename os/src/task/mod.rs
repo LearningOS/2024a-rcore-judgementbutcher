@@ -21,7 +21,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{config::MAX_SYSCALL_NUM, loader::get_app_data_by_name, mm::{MapPermission, PageTableEntry, VPNRange, VirtAddr, VirtPageNum}};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager, TASK_MANAGER};
@@ -100,6 +100,68 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
+}
+
+
+///get current task's status
+pub fn get_current_task_status() -> TaskStatus {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    task_inner.task_status
+}
+
+///increase current tasks's syscall times
+pub fn inc_sys_call_time(syscall_id: usize) {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_sys_calls[syscall_id] += 1;
+}
+
+///获取当前任务的系统调用情况
+pub fn get_current_task_sys_calls() -> [u32;MAX_SYSCALL_NUM] {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    task_inner.task_sys_calls
+}
+
+///或者当前任务的开始调度时间
+pub fn get_current_task_start() -> usize {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    task_inner.task_start 
+}
+
+///获取当前应用的页表
+pub fn get_page_table_entry(vpn: VirtPageNum) -> Option<PageTableEntry> {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
+    task_inner.memory_set.translate(vpn) 
+}
+
+///将给出的虚拟地址空间加入到地址空间中，自然实现了虚拟地址向物理地址的映射
+pub fn add_new_mem_area(start_va: VirtAddr ,end_va: VirtAddr, perm: MapPermission) {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.memory_set.insert_framed_area(start_va, end_va, perm);
+}
+
+///将给出的虚拟地址范围从应用地址空间中删除映射关系
+pub fn unmap_mem_area(start: usize, len: usize) -> isize{
+    //没有给出直接删除一段的函数，那么只能一个一个unmap
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let vpn_st = VirtAddr::from(start).floor();
+    let vpn_ed = VirtAddr::from(start + len).ceil();
+    let vpn_range = VPNRange::new(vpn_st, vpn_ed);
+    for vpn in vpn_range {
+        if let Some(pte) = task_inner.memory_set.translate(vpn) {
+            if !pte.is_valid() {
+                return -1;
+            }
+            task_inner.memory_set.erase_virt_map(vpn);
+        }
+    }
+    0
 }
 
 lazy_static! {

@@ -205,9 +205,9 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
-                    task_sys_calls: parent_inner.task_sys_calls,
-                    task_start: parent_inner.task_start,
-                    task_begin: parent_inner.task_begin,
+                    task_sys_calls: [0;MAX_SYSCALL_NUM],
+                    task_start: 0,
+                    task_begin: false,
                 })
             },
         });

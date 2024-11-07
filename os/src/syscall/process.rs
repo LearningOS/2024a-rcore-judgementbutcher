@@ -4,11 +4,11 @@ use core::mem::size_of;
 use alloc::sync::Arc;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    config::{MAX_SYSCALL_NUM, PAGE_SIZE},
     loader::get_app_data_by_name,
-    mm::{translated_byte_buffer, translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VPNRange, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,suspend_current_and_run_next, TaskStatus, PROCESSOR
+        add_new_mem_area, add_task, current_task, current_user_token, exit_current_and_run_next, get_current_task_start, get_current_task_status, get_current_task_sys_calls, get_page_table_entry, suspend_current_and_run_next, unmap_mem_area, TaskStatus
     }, timer::{get_time_ms, get_time_us},
 };
 
@@ -156,9 +156,9 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 
     //现在任务管理的结构发生变化，需要更新获取值的方法
     let ref task_info = TaskInfo {
-        status: PROCESSOR.exclusive_access().get_current_task_status(),
-        syscall_times: PROCESSOR.exclusive_access().get_current_task_sys_calls(),
-        time: get_time_ms() - PROCESSOR.exclusive_access().get_current_task_start(),
+        status: get_current_task_status(),
+        syscall_times: get_current_task_sys_calls(),
+        time: get_time_ms() - get_current_task_start(),
     };
     let src_ptr = task_info as *const TaskInfo;
     for(idx, dst) in dst_vec.into_iter().enumerate() {
@@ -178,7 +178,27 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _start & (PAGE_SIZE - 1) != 0 
+    || _port & !0x7 != 0
+    || _port & 0x7 == 0 {
+        return -1;
+    }
+    let vpn_st = VirtAddr::from(_start).floor();
+    let vpn_ed= VirtAddr::from(_start + _len).ceil();
+    let vpn_range = VPNRange::new(vpn_st, vpn_ed);
+    //检查要映射的虚拟地址空间，如果已经有被分配过的，返回-1表示失败
+    for vpn in vpn_range {
+        if let Some(pte) = get_page_table_entry(vpn) {
+            if pte.is_valid() {
+                return -1;
+            }
+        }
+    }
+    add_new_mem_area(
+        vpn_st.into(), 
+        vpn_ed.into(), 
+        MapPermission::from_bits_truncate((_port << 1) as u8) | MapPermission::U);
+    0
 }
 
 /// YOUR JOB: Implement munmap.
@@ -187,7 +207,10 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _start &(PAGE_SIZE - 1) != 0 {
+        return -1;
+    }
+    unmap_mem_area(_start, _len)
 }
 
 /// change data segment size
