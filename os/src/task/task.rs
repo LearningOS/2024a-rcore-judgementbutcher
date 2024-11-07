@@ -1,13 +1,14 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+
 
 /// Task control block structure
 ///
@@ -68,6 +69,16 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// The task syscall time
+    pub task_sys_calls: [u32; MAX_SYSCALL_NUM],
+
+    /// The task duration time
+    pub task_start: usize,
+    
+    /// weather the task start
+    pub task_begin: bool
+    
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +129,9 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_sys_calls: [0;MAX_SYSCALL_NUM],
+                    task_start: 0,
+                    task_begin: false,
                 })
             },
         };
@@ -191,6 +205,9 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_sys_calls: parent_inner.task_sys_calls,
+                    task_start: parent_inner.task_start,
+                    task_begin: parent_inner.task_begin,
                 })
             },
         });
