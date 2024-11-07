@@ -104,6 +104,7 @@ impl Processor {
 }
 
 lazy_static! {
+    /// Manage current task's ControlBlock
     pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe { UPSafeCell::new(Processor::new()) };
 }
 
