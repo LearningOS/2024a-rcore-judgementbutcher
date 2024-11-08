@@ -77,7 +77,13 @@ pub struct TaskControlBlockInner {
     pub task_start: usize,
     
     /// weather the task start
-    pub task_begin: bool
+    pub task_begin: bool,
+
+    // task priority
+    pub task_prio: isize,
+
+    ///task stride
+    pub task_stride: isize,
     
 }
 
@@ -132,6 +138,8 @@ impl TaskControlBlock {
                     task_sys_calls: [0;MAX_SYSCALL_NUM],
                     task_start: 0,
                     task_begin: false,
+                    task_prio: 16,
+                    task_stride: 0,
                 })
             },
         };
@@ -208,6 +216,8 @@ impl TaskControlBlock {
                     task_sys_calls: [0;MAX_SYSCALL_NUM],
                     task_start: 0,
                     task_begin: false,
+                    task_prio: 16,
+                    task_stride: 0,
                 })
             },
         });
@@ -252,6 +262,8 @@ impl TaskControlBlock {
                     task_sys_calls: [0;MAX_SYSCALL_NUM],
                     task_start: 0,
                     task_begin: false,
+                    task_prio: 16,
+                    task_stride: 0,
                 })
             }
         });

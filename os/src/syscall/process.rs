@@ -8,7 +8,7 @@ use crate::{
     loader::get_app_data_by_name,
     mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VPNRange, VirtAddr},
     task::{
-        add_new_mem_area, add_task, current_task, current_user_token, exit_current_and_run_next, get_current_task_start, get_current_task_status, get_current_task_sys_calls, get_page_table_entry, suspend_current_and_run_next, unmap_mem_area, TaskStatus
+        add_new_mem_area, add_task, current_task, current_user_token, exit_current_and_run_next, get_current_task_start, get_current_task_status, get_current_task_sys_calls, get_page_table_entry, set_current_task_prio, suspend_current_and_run_next, unmap_mem_area, TaskStatus
     }, timer::{get_time_ms, get_time_us},
 };
 
@@ -249,5 +249,9 @@ pub fn sys_set_priority(_prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _prio <= 1 {
+        return -1;
+    }
+    set_current_task_prio(_prio);
+    _prio
 }

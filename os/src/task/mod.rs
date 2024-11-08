@@ -164,6 +164,13 @@ pub fn unmap_mem_area(start: usize, len: usize) -> isize{
     0
 }
 
+///设置当前任务的优先级
+pub fn set_current_task_prio(prio: isize) {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_prio = prio;
+}
+
 lazy_static! {
     /// Creation of initial process
     ///
