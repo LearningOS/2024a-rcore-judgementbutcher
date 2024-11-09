@@ -1,15 +1,15 @@
 //! Process management syscalls
 //!
 use alloc::sync::Arc;
+use core::mem::size_of;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    config::{MAX_SYSCALL_NUM, PAGE_SIZE},
     fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VPNRange, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
-    },
+        add_new_mem_area, add_task, current_task, current_user_token, exit_current_and_run_next, get_current_task_start, get_current_task_status, get_current_task_sys_calls, get_page_table_entry, set_current_task_prio, suspend_current_and_run_next, unmap_mem_area, TaskStatus
+    }, timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -122,7 +122,24 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let us = get_time_us();
+    let dst_vec = translated_byte_buffer(current_user_token()
+    , _ts as *const u8, size_of::<TimeVal>());
+
+    let ref time_val = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let src_ptr = time_val as *const TimeVal;
+    for (idx, dst) in dst_vec.into_iter().enumerate() {
+        let unit_len = dst.len();
+        unsafe {
+            dst.copy_from_slice(core::slice::from_raw_parts(
+                src_ptr.wrapping_byte_add(idx * unit_len) as *const u8, 
+                unit_len))
+        };
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -133,7 +150,25 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
         "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let dst_vec = translated_byte_buffer(current_user_token(), 
+    _ti as *const u8, size_of::<TaskInfo>());
+
+    //现在任务管理的结构发生变化，需要更新获取值的方法
+    let ref task_info = TaskInfo {
+        status: get_current_task_status(),
+        syscall_times: get_current_task_sys_calls(),
+        time: get_time_ms() - get_current_task_start(),
+    };
+    let src_ptr = task_info as *const TaskInfo;
+    for(idx, dst) in dst_vec.into_iter().enumerate() {
+        let unit_len = dst.len();
+        unsafe {
+            dst.copy_from_slice(core::slice::from_raw_parts(
+                src_ptr.wrapping_byte_add(idx * unit_len) as *const u8, 
+                unit_len));
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
@@ -142,7 +177,27 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _start & (PAGE_SIZE - 1) != 0 
+    || _port & !0x7 != 0
+    || _port & 0x7 == 0 {
+        return -1;
+    }
+    let vpn_st = VirtAddr::from(_start).floor();
+    let vpn_ed= VirtAddr::from(_start + _len).ceil();
+    let vpn_range = VPNRange::new(vpn_st, vpn_ed);
+    //检查要映射的虚拟地址空间，如果已经有被分配过的，返回-1表示失败
+    for vpn in vpn_range {
+        if let Some(pte) = get_page_table_entry(vpn) {
+            if pte.is_valid() {
+                return -1;
+            }
+        }
+    }
+    add_new_mem_area(
+        vpn_st.into(), 
+        vpn_ed.into(), 
+        MapPermission::from_bits_truncate((_port << 1) as u8) | MapPermission::U);
+    0
 }
 
 /// YOUR JOB: Implement munmap.
@@ -151,7 +206,10 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _start &(PAGE_SIZE - 1) != 0 {
+        return -1;
+    }
+    unmap_mem_area(_start, _len)
 }
 
 /// change data segment size
@@ -171,7 +229,18 @@ pub fn sys_spawn(_path: *const u8) -> isize {
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, _path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let task = current_task().unwrap();
+        let new_task = task.spawn(all_data.as_slice());
+        let new_pid = new_task.pid.0;
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
@@ -180,5 +249,9 @@ pub fn sys_set_priority(_prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _prio <= 1 {
+        return -1;
+    }
+    set_current_task_prio(_prio);
+    _prio
 }

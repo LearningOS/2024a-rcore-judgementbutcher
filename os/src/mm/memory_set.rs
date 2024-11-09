@@ -78,6 +78,12 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    ///erase specific virt map
+    pub fn erase_virt_map(&mut self, vpn: VirtPageNum) {
+        self.page_table.unmap(vpn);
+    }
+
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.
