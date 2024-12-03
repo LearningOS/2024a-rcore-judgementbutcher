@@ -183,4 +183,14 @@ impl Inode {
         });
         block_cache_sync_all();
     }
+
+    ///add a hard link to old_path
+    pub fn link(&self, old_path: &str, new_path: &str) {
+        let mut fs = self.fs.lock();
+        let op = |root_inode: &DiskInode| {
+            assert!(root_inode.is_dir());
+            self.find_inode_id(old_path, root_inode)
+        };
+
+    }
 }
